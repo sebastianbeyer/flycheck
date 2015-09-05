@@ -1959,6 +1959,21 @@ and extension, as in `file-name-base'."
       (flycheck-report-failed-syntax-check)
       (should-not flycheck-current-errors))))
 
+(ert-deftest flycheck-mode-line/mentions-errors ()
+  :tags '(status-reporting)
+  (flycheck-ert-with-temp-buffer
+    (let ((flycheck-current-errors
+           (list (flycheck-error-new-at 1 1 'info "info")
+                 (flycheck-error-new-at 1 1 'error "error"))))
+      (should (string= (flycheck-mode-line-status-text 'finished) " FlyC:1/0")))))
+
+(ert-deftest flycheck-mode-line/ignores-info ()
+  :tags '(status-reporting)
+  (flycheck-ert-with-temp-buffer
+    (let ((flycheck-current-errors
+           (list (flycheck-error-new-at 1 1 'info "info"))))
+      (should (string= (flycheck-mode-line-status-text 'finished) " FlyC")))))
+
 
 ;;; Error levels
 ;; A level for the following unit tests
@@ -2170,19 +2185,6 @@ and extension, as in `file-name-base'."
   :tags '(overlay)
   (should (eq (get 'flycheck-error-overlay 'face) 'flycheck-error)))
 
-(ert-deftest flycheck-info-overlay/default-help-echo ()
-  :tags '(overlay)
-  (should (string= (get 'flycheck-info-overlay 'help-echo) "Unknown info.")))
-
-(ert-deftest flycheck-warning-overlay/default-help-echo ()
-  :tags '(overlay)
-  (should (string= (get 'flycheck-warning-overlay 'help-echo)
-                   "Unknown warning.")))
-
-(ert-deftest flycheck-error-overlay/default-help-echo ()
-  :tags '(overlay)
-  (should (string= (get 'flycheck-error-overlay 'help-echo) "Unknown error.")))
-
 (ert-deftest flycheck-add-overlay/undefined-error-level ()
   :tags '(overlay)
   (let ((err (should-error (flycheck-add-overlay
@@ -2220,7 +2222,7 @@ and extension, as in `file-name-base'."
   (flycheck-ert-with-temp-buffer
     (let ((overlay (flycheck-add-overlay
                     (flycheck-error-new-at 1 1 'info "A bar message"))))
-      (should (string= (overlay-get overlay 'help-echo) "A bar message")))))
+      (should (eq (overlay-get overlay 'help-echo) #'flycheck-help-echo)))))
 
 (ert-deftest flycheck-add-overlay/has-flycheck-overlay-property ()
   :tags '(overlay)
@@ -2330,6 +2332,47 @@ and extension, as in `file-name-base'."
           :checker emacs-lisp-checkdoc)
      '(15 1 warning "`message' called with 0 args to fill 1 format field(s)"
           :checker emacs-lisp))))
+
+(ert-deftest flycheck-add-overlay/help-echo-is-error-message ()
+  :tags '(overlay)
+  "Check for default help at point."
+  (flycheck-ert-with-temp-buffer
+    (insert " ")
+    (goto-char 1)
+    (let ((overlay (flycheck-add-overlay
+                    (flycheck-error-new-at 1 1 'info "A bar message"))))
+      (should (string= (help-at-pt-string) "A bar message")))))
+
+(ert-deftest flycheck-add-overlay/can-suppress-help-echo ()
+  :tags '(overlay)
+  "Check that setting help-echo function to nil removes help echoes."
+  (flycheck-ert-with-temp-buffer
+    (insert " ")
+    (goto-char 1)
+    (let ((flycheck-help-echo-function nil)
+          (overlay (flycheck-add-overlay
+                    (flycheck-error-new-at 1 1 'info "info"))))
+      (should (string= (help-at-pt-string) nil)))))
+
+(ert-deftest flycheck-add-overlay/help-echo-for-nil-message-is-default ()
+  :tags '(overlay)
+  "Check that null error messages are replaced by 'Unkown [level]'."
+  (flycheck-ert-with-temp-buffer
+    (insert " ")
+    (goto-char 1)
+    (let ((overlay (flycheck-add-overlay (flycheck-error-new-at 1 1 'info))))
+      (should (string= (help-at-pt-string) "Unknown info")))))
+
+(ert-deftest flycheck-add-overlay/help-echo-stacks-errors ()
+  :tags '(overlay)
+  "Check that help-echo messages contain all error messages at point."
+  (flycheck-ert-with-temp-buffer
+    (insert " ")
+    (goto-char 1)
+    (flycheck-add-overlay (flycheck-error-new-at 1 1 'info "info"))
+    (flycheck-add-overlay (flycheck-error-new-at 1 1 'warning "warning"))
+    (flycheck-add-overlay (flycheck-error-new-at 1 1 'error "error"))
+    (should (string= (help-at-pt-string) "info\n\nwarning\n\nerror"))))
 
 
 ;;; Error navigation in the current buffer
@@ -3948,6 +3991,18 @@ n' : nat
 The term \"1\" has type \"nat\" while it is expected to have type
 \"bool\"." :checker coq)))
 
+(flycheck-ert-def-checker-test coq coq error
+  (flycheck-ert-should-syntax-check
+   "checkers/coq-error-2.v" 'coq-mode
+   '(4 58 error "In environment
+A : Set
+P : A -> Prop
+Q : A -> Prop
+R : A -> A -> Prop
+The term \"(fun (R : A -> A -> Prop) (a b : A) => R b a) R\" has type
+ \"A -> A -> Prop\" while it is expected to have type
+ \"(forall a b : A, R a b) -> forall a b : A, R b a\".")))
+
 (flycheck-ert-def-checker-test css-csslint css nil
   :tags '(checkstyle-xml)
   (flycheck-ert-should-syntax-check
@@ -4477,12 +4532,6 @@ Why not:
      '(4 9 warning "'foo' is defined but never used." :id "W098"
          :checker javascript-jshint))))
 
-(flycheck-ert-def-checker-test javascript-jshint javascript ignored
-  :tags '(checkstyle-xml)
-  (let ((flycheck-disabled-checkers '(javascript-jscs)))
-    (flycheck-ert-should-syntax-check
-     "checkers/javascript/ignored/warnings.js" '(js-mode js2-mode js3-mode))))
-
 (flycheck-ert-def-checker-test javascript-eslint javascript error
   :tags '(checkstyle-xml)
   (let ((flycheck-disabled-checkers '(javascript-jshint)))
@@ -4529,13 +4578,6 @@ Why not:
      "checkers/javascript-style.js" '(js-mode js2-mode js3-mode)
      '(1 nil warning "No JSCS configuration found.  Set `flycheck-jscsrc' for JSCS"
          :checker javascript-jscs))))
-
-(flycheck-ert-def-checker-test javascript-jscs javascript ignored
-  :tags '(checkstyle-xml)
-  (let ((flycheck-disabled-checkers
-         '(javascript-jshint javascript-eslint javascript-gjslint)))
-    (flycheck-ert-should-syntax-check
-     "checkers/javascript/ignored/style.js" '(js-mode js2-mode js3-mode))))
 
 (flycheck-ert-def-checker-test (javascript-jshint javascript-jscs)
     javascript complete-chain

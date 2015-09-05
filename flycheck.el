@@ -398,6 +398,24 @@ If set to nil, do not display errors at all."
   :package-version '(flycheck . "0.13")
   :risky t)
 
+(defcustom flycheck-help-echo-function #'flycheck-help-echo-all-error-messages
+  "Function to compute the contents of the error tooltips.
+
+If set to a function, call the function with the list of errors
+to display as single argument.  Each error is an instance of the
+`flycheck-error' struct.  The function is used to set the
+help-echo property of flycheck error overlays.  It should return
+a string, which is displayed when the user hovers over an error
+or presses \\[display-local-help].
+
+If set to nil, do not show error tooltips."
+  :group 'flycheck
+  :type '(choice (const :tag "Concatenate error messages to form a tooltip"
+                        flycheck-help-echo-all-error-messages)
+                 (function :tag "Help echo function"))
+  :package-version '(flycheck . "0.25")
+  :risky t)
+
 (defcustom flycheck-indication-mode 'left-fringe
   "The indication mode for Flycheck errors and warnings.
 
@@ -547,7 +565,7 @@ is at least as severe as this one.  If nil, navigate all errors."
 (defcustom flycheck-error-list-minimum-level nil
   "The minimum level of errors to display in the error list.
 
-If set to an error level, only displays errors whose error level
+If set to an error level, only display errors whose error level
 is at least as severe as this one in the error list.  If nil,
 display all errors.
 
@@ -2995,10 +3013,10 @@ nil."
                 (`running "*")
                 (`errored "!")
                 (`finished
-                 (if flycheck-current-errors
-                     (let-alist (flycheck-count-errors flycheck-current-errors)
-                       (format ":%s/%s" (or .error 0) (or .warning 0)))
-                   ""))
+                 (let-alist (flycheck-count-errors flycheck-current-errors)
+                   (if (or .error .warning)
+                       (format ":%s/%s" (or .error 0) (or .warning 0))
+                     "")))
                 (`interrupted "-")
                 (`suspicious "?"))))
     (concat " FlyC" text)))
@@ -3036,11 +3054,9 @@ The following PROPERTIES constitute an error level:
      overlay categories.
 
      A category for an error level overlay should at least define
-     the `face' property, for error highlighting.  Other useful
-     properties for error level categories are `priority' to
-     influence the stacking of multiple error level overlays, and
-     `help-echo' to define a default error messages for errors
-     without messages.
+     the `face' property, for error highlighting.  Another useful
+     property for error level categories is `priority', to
+     influence the stacking of multiple error level overlays.
 
 `:fringe-bitmap BITMAP'
      A fringe bitmap symbol denoting the bitmap to use for fringe
@@ -3122,7 +3138,6 @@ show the icon."
 ;;; Built-in error levels
 (setf (get 'flycheck-error-overlay 'face) 'flycheck-error)
 (setf (get 'flycheck-error-overlay 'priority) 110)
-(setf (get 'flycheck-error-overlay 'help-echo) "Unknown error.")
 
 (flycheck-define-error-level 'error
   :severity 100
@@ -3134,7 +3149,6 @@ show the icon."
 
 (setf (get 'flycheck-warning-overlay 'face) 'flycheck-warning)
 (setf (get 'flycheck-warning-overlay 'priority) 100)
-(setf (get 'flycheck-warning-overlay 'help-echo) "Unknown warning.")
 
 (flycheck-define-error-level 'warning
   :severity 10
@@ -3146,7 +3160,6 @@ show the icon."
 
 (setf (get 'flycheck-info-overlay 'face) 'flycheck-info)
 (setf (get 'flycheck-info-overlay 'priority) 90)
-(setf (get 'flycheck-info-overlay 'help-echo) "Unknown info.")
 
 (flycheck-define-error-level 'info
   :severity -1
@@ -3395,8 +3408,34 @@ Return the created overlay."
       (setf (overlay-get overlay 'before-string)
             (flycheck-error-level-make-fringe-icon
              level flycheck-indication-mode)))
-    (setf (overlay-get overlay 'help-echo) (flycheck-error-message err))
+    (setf (overlay-get overlay 'help-echo) #'flycheck-help-echo)
     overlay))
+
+(defun flycheck-help-echo (window object pos)
+  "Construct a tooltip message.
+
+Most of the actual work is done by calling
+`flycheck-help-echo-function' with the appropriate list of
+errors.  Arguments WINDOW, OBJECT and POS are as described in
+info node `(elisp)Special properties', as this function is
+intended to be used as the 'help-echo property of flycheck error
+overlays."
+  (-when-let (buf (cond ((bufferp object) object)
+                        ((overlayp object) (overlay-buffer object))))
+    (with-current-buffer buf
+      (-when-let* ((fn flycheck-help-echo-function)
+                   (errs (flycheck-overlay-errors-at pos)))
+        (funcall fn errs)))))
+
+(defun flycheck-help-echo-all-error-messages (errs)
+  "Concatenate error messages and ids from ERRS."
+  (mapconcat
+   (lambda (err)
+     (when err
+       (if (flycheck-error-message err)
+           (flycheck-error-format-message-and-id err)
+         (format "Unknown %s" (flycheck-error-level err)))))
+   (reverse errs) "\n\n"))
 
 (defun flycheck-filter-overlays (overlays)
   "Get all Flycheck overlays from OVERLAYS."
@@ -5755,7 +5794,7 @@ See URL `http://coq.inria.fr/'."
   ((error line-start "File \"" (file-name) "\", line " line
           ;; TODO: Parse the end column, once Flycheck supports that
           ", characters " column "-" (one-or-more digit) ":\n"
-          (or "Syntax error: " "Error: ")
+          (or "Syntax error:" "Error:")
           ;; Most Coq error messages span multiple lines, and end with a dot.
           ;; There are simple one-line messages, too, though.
           (message (or (and (one-or-more (or not-newline "\n")) ".")
@@ -5763,7 +5802,7 @@ See URL `http://coq.inria.fr/'."
           line-end))
   :error-filter
   (lambda (errors)
-    (dolist (err errors)
+    (dolist (err (flycheck-sanitize-errors errors))
       (setf (flycheck-error-message err)
             (replace-regexp-in-string (rx (1+ (syntax whitespace)) line-end)
                                       "" (flycheck-error-message err)
@@ -6661,7 +6700,7 @@ See URL `http://jade-lang.com'."
 See URL `http://www.jshint.com'."
   :command ("jshint" "--checkstyle-reporter"
             (config-file "--config" flycheck-jshintrc)
-            source-inplace)
+            source)
   :error-parser flycheck-parse-checkstyle
   :error-filter flycheck-dequalify-error-ids
   :modes (js-mode js2-mode js3-mode)
@@ -6756,7 +6795,7 @@ error."
 See URL `http://www.jscs.info'."
   :command ("jscs" "--reporter=checkstyle"
             (config-file "--config" flycheck-jscsrc)
-            source-inplace)
+            source)
   :error-parser flycheck-parse-jscs
   :error-filter (lambda (errors)
                   (flycheck-remove-error-ids
