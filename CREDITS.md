@@ -34,6 +34,7 @@ substantial code to Flycheck:
 - [Marcin Antczak](https://github.com/marcinant)
 - [Marcus Majewski](https://github.com/hekto)
 - [Mark Hellewell](https://github.com/markhellewell)
+- [Matthew Curry](https://github.com/strawhatguy)
 - [Matthias Dahl](https://github.com/BinaryKhaos)
 - [Miro Bezjak](https://github.com/mbezjak)
 - [Mitch Tishmack](https://github.com/mitchty)
