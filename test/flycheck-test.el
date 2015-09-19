@@ -3994,14 +3994,15 @@ The term \"1\" has type \"nat\" while it is expected to have type
 (flycheck-ert-def-checker-test coq coq error
   (flycheck-ert-should-syntax-check
    "checkers/coq-error-2.v" 'coq-mode
-   '(4 58 error "In environment
+   '(4 10 error "In environment
 A : Set
 P : A -> Prop
 Q : A -> Prop
 R : A -> A -> Prop
 The term \"(fun (R : A -> A -> Prop) (a b : A) => R b a) R\" has type
  \"A -> A -> Prop\" while it is expected to have type
- \"(forall a b : A, R a b) -> forall a b : A, R b a\".")))
+ \"(forall a b : A, R a b) -> forall a b : A, R b a\"."
+       :checker coq)))
 
 (flycheck-ert-def-checker-test css-csslint css nil
   :tags '(checkstyle-xml)
@@ -4547,7 +4548,7 @@ Why not:
      "checkers/javascript-warnings.js" '(js-mode js2-mode js3-mode)
      '(3 2 warning "Use the function form of \"use strict\"." :id "strict"
          :checker javascript-eslint)
-     '(4 9 warning "foo is defined but never used" :id "no-unused-vars"
+     '(4 9 warning "\"foo\" is defined but never used" :id "no-unused-vars"
          :checker javascript-eslint))))
 
 (flycheck-ert-def-checker-test javascript-gjslint javascript nil
@@ -4603,7 +4604,7 @@ Why not:
          :checker javascript-eslint)
      '(4 3 error "Expected indentation of 2 characters"
          :checker javascript-jscs)
-     '(4 9 warning "foo is defined but never used" :id "no-unused-vars"
+     '(4 9 warning "\"foo\" is defined but never used" :id "no-unused-vars"
          :checker javascript-eslint))))
 
 (flycheck-ert-def-checker-test (javascript-gjslint javascript-jscs)
@@ -4626,15 +4627,15 @@ Why not:
      "checkers/javascript-style.js" '(js-mode js2-mode js3-mode)
      '(3 10 error "Missing space before function parentheses."
          :checker javascript-standard)
-     '(4 2 error "Expected indentation of 2 characters but found 0."
+     '(4 2 error "Expected indentation of 2 space characters but found 0."
          :checker javascript-standard)
-     '(4 6 error "foo is defined but never used"
+     '(4 6 error "\"foo\" is defined but never used"
          :checker javascript-standard)
      '(4 13 error "Strings must use singlequote."
          :checker javascript-standard)
-     '(4 28 error "Extra semicolon."
+     '(4 27 error "Extra semicolon."
          :checker javascript-standard)
-     '(5 6 error "Extra semicolon."
+     '(5 5 error "Extra semicolon."
          :checker javascript-standard))))
 
 (flycheck-ert-def-checker-test javascript-standard javascript semistandard
@@ -4644,9 +4645,9 @@ Why not:
      "checkers/javascript-style.js" '(js-mode js2-mode js3-mode)
      '(3 10 error "Missing space before function parentheses."
          :checker javascript-standard)
-     '(4 2 error "Expected indentation of 2 characters but found 0."
+     '(4 2 error "Expected indentation of 2 space characters but found 0."
          :checker javascript-standard)
-     '(4 6 error "foo is defined but never used"
+     '(4 6 error "\"foo\" is defined but never used"
          :checker javascript-standard)
      '(4 13 error "Strings must use singlequote."
          :checker javascript-standard))))
@@ -4897,10 +4898,60 @@ Why not:
         (python-indent-guess-indent-offset nil)) ; Silence Python Mode
     (flycheck-ert-should-syntax-check
      "checkers/python-syntax-error.py" 'python-mode
-     '(3 1 error "invalid syntax" :id "E0001" :checker python-pylint))))
+     '(3 1 error "invalid syntax" :id "syntax-error" :checker python-pylint))))
 
 (flycheck-ert-def-checker-test python-pylint python nil
   (let ((flycheck-disabled-checkers '(python-flake8)))
+    (flycheck-ert-should-syntax-check
+     "checkers/python/test.py" 'python-mode
+     '(1 1 info "Missing module docstring" :id "missing-docstring" :checker python-pylint)
+     '(4 1 error "Unable to import 'spam'" :id "import-error" :checker python-pylint)
+     '(5 1 error "No name 'antigravit' in module 'python'" :id "no-name-in-module"
+         :checker python-pylint)
+     '(5 1 warning "Unused import antigravit" :id "unused-import"
+         :checker python-pylint)
+     '(7 1 info "Missing class docstring" :id "missing-docstring" :checker python-pylint)
+     '(9 5 info "Invalid method name \"withEggs\"" :id "invalid-name"
+         :checker python-pylint)
+     '(9 5 info "Missing method docstring" :id "missing-docstring" :checker python-pylint)
+     '(9 5 warning "Method could be a function" :id "no-self-use"
+         :checker python-pylint)
+     '(10 16 warning "Used builtin function 'map'" :id "bad-builtin"
+          :checker python-pylint)
+     '(12 1 info "No space allowed around keyword argument assignment"
+          :id "bad-whitespace" :checker python-pylint)
+     '(12 5 info "Missing method docstring" :id "missing-docstring" :checker python-pylint)
+     '(12 5 warning "Method could be a function" :id "no-self-use"
+          :checker python-pylint)
+     '(14 16 error "Module 'sys' has no 'python_version' member" :id "no-member"
+          :checker python-pylint)
+     '(15 1 info "Unnecessary parens after u'print' keyword" :id "superfluous-parens"
+          :checker python-pylint)
+     '(17 1 info "Unnecessary parens after u'print' keyword" :id "superfluous-parens"
+          :checker python-pylint)
+     '(22 1 error "Undefined variable 'antigravity'" :id "undefined-variable"
+          :checker python-pylint))))
+
+(flycheck-ert-def-checker-test python-pylint python disabled-warnings
+  (let ((flycheck-pylintrc "pylintrc")
+        (flycheck-disabled-checkers '(python-flake8)))
+    (flycheck-ert-should-syntax-check
+     "checkers/python/test.py" 'python-mode
+     '(4 1 error "Unable to import 'spam'" :id "import-error" :checker python-pylint)
+     '(5 1 error "No name 'antigravit' in module 'python'" :id "no-name-in-module"
+         :checker python-pylint)
+     '(5 1 warning "Unused import antigravit" :id "unused-import"
+         :checker python-pylint)
+     '(10 16 warning "Used builtin function 'map'" :id "bad-builtin"
+          :checker python-pylint)
+     '(14 16 error "Module 'sys' has no 'python_version' member" :id "no-member"
+          :checker python-pylint)
+     '(22 1 error "Undefined variable 'antigravity'" :id "undefined-variable"
+          :checker python-pylint))))
+
+(flycheck-ert-def-checker-test python-pylint python no-symbolic-id
+  (let ((flycheck-disabled-checkers '(python-flake8))
+        (flycheck-pylint-use-symbolic-id nil))
     (flycheck-ert-should-syntax-check
      "checkers/python/test.py" 'python-mode
      '(1 1 info "Missing module docstring" :id "C0111" :checker python-pylint)
@@ -4927,23 +4978,6 @@ Why not:
      '(15 1 info "Unnecessary parens after u'print' keyword" :id "C0325"
           :checker python-pylint)
      '(17 1 info "Unnecessary parens after u'print' keyword" :id "C0325"
-          :checker python-pylint)
-     '(22 1 error "Undefined variable 'antigravity'" :id "E0602"
-          :checker python-pylint))))
-
-(flycheck-ert-def-checker-test python-pylint python disabled-warnings
-  (let ((flycheck-pylintrc "pylintrc")
-        (flycheck-disabled-checkers '(python-flake8)))
-    (flycheck-ert-should-syntax-check
-     "checkers/python/test.py" 'python-mode
-     '(4 1 error "Unable to import 'spam'" :id "F0401" :checker python-pylint)
-     '(5 1 error "No name 'antigravit' in module 'python'" :id "E0611"
-         :checker python-pylint)
-     '(5 1 warning "Unused import antigravit" :id "W0611"
-         :checker python-pylint)
-     '(10 16 warning "Used builtin function 'map'" :id "W0141"
-          :checker python-pylint)
-     '(14 16 error "Module 'sys' has no 'python_version' member" :id "E1101"
           :checker python-pylint)
      '(22 1 error "Undefined variable 'antigravity'" :id "E0602"
           :checker python-pylint))))
@@ -5019,11 +5053,6 @@ Why not:
    '(19 nil warning "Title underline too short." :checker rst)
    '(21 nil error "Unknown target name: \"cool\"." :checker rst)
    '(26 nil error "Unexpected section title." :checker rst)))
-
-(flycheck-ert-def-checker-test rst rst not-in-a-sphinx-project
-  (flycheck-ert-with-resource-buffer "checkers/rst-sphinx/index.rst"
-    (rst-mode)
-    (should-not (flycheck-may-use-checker 'rst))))
 
 (flycheck-ert-def-checker-test rst-sphinx rst nil
   (flycheck-ert-should-syntax-check
@@ -5369,7 +5398,7 @@ Why not:
 (flycheck-ert-def-checker-test sqllint sql nil
   (flycheck-ert-should-syntax-check
    "checkers/sql-syntax-error.sql" 'sql-mode
-   `(1 15 error "unterminated quoted string at or near \"';\n  \""
+   `(1 15 error "unterminated quoted string at or near \"';\n  \" (scan.l:1087)"
        :checker sql-sqlint)))
 
 (flycheck-ert-def-checker-test tex-chktex (tex latex) nil

@@ -5,6 +5,7 @@
 ;;
 ;; Author: Sebastian Wiesner <swiesner@lunaryorn.com>
 ;; Maintainer: Sebastian Wiesner <swiesner@lunaryorn.com>
+;;             Clément Pit--Claudel <clement.pitclaudel@live.com>
 ;; URL: https://www.flycheck.org
 ;; Keywords: convenience, languages, tools
 ;; Version: 0.25-cvs
@@ -221,8 +222,8 @@ attention to case differences."
     r-lintr
     racket
     rpm-rpmlint
-    rst
     rst-sphinx
+    rst
     ruby-rubocop
     ruby-rubylint
     ruby
@@ -3691,10 +3692,33 @@ Return a list with the contents of the table cell."
                   (flycheck-error-list-make-cell
                    (if id (format "%s" id) "")
                    'flycheck-error-list-id)
-                  (flycheck-error-list-make-cell message)
+                  (flycheck-error-list-make-cell
+                   (flycheck-flush-multiline-message message))
                   (flycheck-error-list-make-cell
                    (format "(%s)" checker)
                    'flycheck-error-list-checker-name)))))
+
+(defun flycheck-compute-message-column-offset ()
+  "Compute the amount of space to use in `flycheck-flush-multiline-message'."
+  (let* ((widths (mapcar (lambda (fmt)
+                           (pcase-let* ((`(,name ,width _ ,props) fmt)
+                                        (padding (plist-get props :pad-right)))
+                             (cons name (+ width (or padding 1)))))
+                         tabulated-list-format))
+         (before-msg (-take-while (lambda (fmt)
+                                    (not (string= (car fmt) "Message")))
+                                  widths)))
+    (apply #'+ tabulated-list-padding (mapcar #'cdr before-msg))))
+
+(defun flycheck-flush-multiline-message (msg)
+  "Prepare error message MSG for display in the error list.
+
+Prepend all lines of MSG except the first with enough space to
+ensure that they line up properly once the message is displayed."
+  (let* ((msg-offset (flycheck-compute-message-column-offset))
+         (spc (propertize " " 'display `(space . (:width ,msg-offset))))
+         (rep (concat "\\1" spc "\\2")))
+    (replace-regexp-in-string "\\([\r\n]+\\)\\(.\\)" rep msg)))
 
 (defun flycheck-error-list-current-errors ()
   "Read the list of errors in `flycheck-error-list-source-buffer'."
@@ -6370,7 +6394,7 @@ See URL `https://github.com/kisielk/errcheck'."
   :command ("errcheck" (eval (flycheck-go-package-name)))
   :error-patterns
   ((warning line-start
-            (file-name) ":" line ":" column (one-or-more "\t")
+            (file-name) ":" line ":" column (or (one-or-more "\t") ": ")
             (message)
             line-end))
   :error-filter
@@ -6501,11 +6525,24 @@ pragma.  Each extension is enabled via `-X'."
   :safe #'flycheck-string-list-p
   :package-version '(flycheck . "0.19"))
 
+(defvar flycheck-haskell-ghc-cache-directory nil
+  "The cache directory for `ghc' output.")
+
+(defun flycheck-haskell-ghc-cache-directory ()
+  "Get the cache location for `ghc' output.
+
+If no cache directory exists yet, create one and return it.
+Otherwise return the previously used cache directory."
+  (setq flycheck-haskell-ghc-cache-directory
+        (or flycheck-haskell-ghc-cache-directory
+            (make-temp-file "flycheck-haskell-ghc-cache" 'directory))))
+
 (flycheck-define-checker haskell-stack-ghc
   "A Haskell syntax and type checker using `stack ghc'.
 
 See URL `https://github.com/commercialhaskell/stack'."
-  :command ("stack" "ghc" "--" "-Wall" "-fno-code"
+  :command ("stack" "ghc" "--" "-Wall" "-no-link"
+            "-outputdir" (eval (flycheck-haskell-ghc-cache-directory))
             (option-list "-X" flycheck-ghc-language-extensions concat)
             (option-list "-i" flycheck-ghc-search-path concat)
             (eval (concat
@@ -6546,7 +6583,8 @@ See URL `https://github.com/commercialhaskell/stack'."
   "A Haskell syntax and type checker using ghc.
 
 See URL `http://www.haskell.org/ghc/'."
-  :command ("ghc" "-Wall" "-fno-code"
+  :command ("ghc" "-Wall" "-no-link"
+            "-outputdir" (eval (flycheck-haskell-ghc-cache-directory))
             (option-flag "-no-user-package-db"
                          flycheck-ghc-no-user-package-database)
             (option-list "-package-db" flycheck-ghc-package-databases)
@@ -7159,6 +7197,16 @@ Requires Flake8 2.0 or newer. See URL
                               ".pylintrc"
   :safe #'stringp)
 
+(flycheck-def-option-var flycheck-pylint-use-symbolic-id t python-pylint
+  "Whether to use pylint message symbols or message codes.
+
+A pylint message has both an opaque identifying code (such as `F0401') and a
+more meaningful symbolic code (such as `import-error').  This option governs
+which should be used and reported to the user."
+  :type 'boolean
+  :safe #'booleanp
+  :package-version '(flycheck . "0.24"))
+
 (flycheck-define-checker python-pylint
   "A Python syntax and style checker using Pylint.
 
@@ -7167,7 +7215,10 @@ This syntax checker requires Pylint 1.0 or newer.
 See URL `http://www.pylint.org/'."
   ;; -r n disables the scoring report
   :command ("pylint" "-r" "n"
-            "--msg-template" "{path}:{line}:{column}:{C}:{msg_id}:{msg}"
+            "--msg-template"
+            (eval (if flycheck-pylint-use-symbolic-id
+                      "{path}:{line}:{column}:{C}:{symbol}:{msg}"
+                    "{path}:{line}:{column}:{C}:{msg_id}:{msg}"))
             (config-file "--rcfile" flycheck-pylintrc)
             ;; Need `source-inplace' for relative imports (e.g. `from .foo
             ;; import bar'), see https://github.com/flycheck/flycheck/issues/280
@@ -7305,10 +7356,7 @@ See URL `http://docutils.sourceforge.net/'."
           (file-name) ":" line
           ": (" (or "ERROR/3" "SEVERE/4") ") "
           (message) line-end))
-  :modes rst-mode
-  ;; Don't use the generic ReST checker in Sphinx projects, because it'll
-  ;; produce a lot of false positives.
-  :predicate (lambda () (not (flycheck-locate-sphinx-source-directory))))
+  :modes rst-mode)
 
 (flycheck-def-option-var flycheck-sphinx-warn-on-missing-references t rst-sphinx
   "Whether to warn about missing references in Sphinx.
@@ -7952,7 +8000,8 @@ See URL `https://github.com/nodeca/js-yaml'."
   :command ("js-yaml" source)
   :error-patterns
   ((error line-start
-          "JS-YAML: " (message) " at line " line ", column " column ":"
+          (or "JS-YAML" "YAMLException") ": "
+          (message) " at line " line ", column " column ":"
           line-end))
   :modes yaml-mode)
 

@@ -19,7 +19,10 @@ ifneq ($(TRAVIS_TAG),)
 MANUAL_VERSION=--version $(TRAVIS_TAG)
 endif
 
-EMACSBUILDFLAGS = --with-x-toolkit=no --without-x --without-all --with-xml2
+# Build with as few features as possible to cut build times, but keep XML2 for
+# our XML-parser tests
+EMACSBUILDFLAGS = --quiet --enable-silent-rules \
+	--with-x-toolkit=no --without-x --without-all --with-xml2
 
 ifeq ($(origin EMACS_VERSION), undefined)
 $(error "No $$EMACS_VERSION in environment!")
@@ -53,7 +56,7 @@ checkout_emacs_trunk:
 # Build a small Emacs executable without anything for tests
 install_emacs: $(GETEMACS)
 	cd '/tmp/emacs' && ./configure $(EMACSBUILDFLAGS) --prefix="$(HOME)"
-	make -j2 -C '/tmp/emacs' install
+	make -j2 -C '/tmp/emacs' V=0 install
 
 install_cask: install_emacs
 	git clone https://github.com/cask/cask.git "$(HOME)/.cask"
